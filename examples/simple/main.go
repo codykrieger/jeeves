@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/codykrieger/jeeves"
+	"github.com/codykrieger/jeeves/ask"
 )
 
 func main() {
@@ -20,11 +21,11 @@ func main() {
 	log.Fatal(http.ListenAndServe(":3000", j))
 }
 
-func helloHandler(skill *jeeves.Skill, req *jeeves.ASKRequest) *jeeves.ASKResponse {
-	resp := jeeves.NewASKResponse(req)
+func helloHandler(skill *jeeves.Skill, req *ask.Request) *ask.Response {
+	resp := ask.NewResponse(req)
 
 	if req.IsLaunchRequest() {
-		resp.Body.OutputSpeech = jeeves.NewASKOutputSpeech("Hello there!")
+		resp.Body.OutputSpeech = ask.NewOutputSpeech("Hello there!")
 	} else if req.IsIntentRequest() {
 	} else if req.IsSessionEndedRequest() {
 	}

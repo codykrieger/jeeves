@@ -17,6 +17,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/codykrieger/jeeves/ask"
 )
 
 var certURLStringToBytesMap map[string][]byte
@@ -33,8 +35,8 @@ type Skill struct {
 	Name            string
 	Endpoint        string
 	ApplicationID   string
-	Handler         func(*Skill, *ASKRequest) *ASKResponse
-	internalHandler func(*requestContext, *ASKRequest)
+	Handler         func(*Skill, *ask.Request) *ask.Response
+	internalHandler func(*requestContext, *ask.Request)
 }
 
 type requestContext struct {
@@ -54,7 +56,7 @@ func (j *Jeeves) RegisterSkill(skill *Skill) {
 	// FIXME: Validate Endpoint.
 	j.skillsByEndpoint[skill.Endpoint] = skill
 
-	skill.internalHandler = func(ctx *requestContext, req *ASKRequest) {
+	skill.internalHandler = func(ctx *requestContext, req *ask.Request) {
 		resp := skill.Handler(skill, req)
 		bytes, _ := resp.Bytes()
 
@@ -85,7 +87,7 @@ func (ctx *requestContext) err(code int, theError error) {
 }
 
 func (ctx *requestContext) process() {
-	req, err := NewASKRequestFromJSON(ctx.req.Body)
+	req, err := ask.NewRequestFromJSON(ctx.req.Body)
 	if err != nil {
 		ctx.err(400, err)
 		return
@@ -101,7 +103,7 @@ func (ctx *requestContext) process() {
 	ctx.skill.internalHandler(ctx, req)
 }
 
-func (ctx *requestContext) validateRequestSignature(req *ASKRequest) bool {
+func (ctx *requestContext) validateRequestSignature(req *ask.Request) bool {
 	certChainURL := ctx.req.Header.Get("SignatureCertChainUrl")
 	if !ctx.validateCertChainURL(certChainURL) {
 		return false
@@ -211,7 +213,7 @@ func (ctx *requestContext) validateCertChainURL(urlString string) bool {
 	return true
 }
 
-func (ctx *requestContext) validateApplicationID(req *ASKRequest) bool {
+func (ctx *requestContext) validateApplicationID(req *ask.Request) bool {
 	if req.Session.Application.ApplicationID != ctx.skill.ApplicationID {
 		ctx.err(400, fmt.Errorf("Expected application ID %v, got %v",
 			ctx.skill.ApplicationID, req.Session.Application.ApplicationID))
@@ -220,7 +222,7 @@ func (ctx *requestContext) validateApplicationID(req *ASKRequest) bool {
 	return true
 }
 
-func (ctx *requestContext) validateTimestamp(req *ASKRequest) bool {
+func (ctx *requestContext) validateTimestamp(req *ask.Request) bool {
 	ts, err := time.Parse(time.RFC3339Nano, req.Body.Timestamp)
 	if err != nil {
 		ctx.err(400, fmt.Errorf("Bad request timestamp %v", req.Body.Timestamp))
@@ -235,7 +237,7 @@ func (ctx *requestContext) validateTimestamp(req *ASKRequest) bool {
 	return true
 }
 
-func (ctx *requestContext) validateRequestType(req *ASKRequest) bool {
+func (ctx *requestContext) validateRequestType(req *ask.Request) bool {
 	if !req.IsLaunchRequest() && !req.IsIntentRequest() && !req.IsSessionEndedRequest() {
 		ctx.err(400, fmt.Errorf("Request type '%v' invalid", req.Body.Type))
 		return false
