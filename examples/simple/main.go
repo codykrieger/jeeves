@@ -16,6 +16,7 @@ func main() {
 		ApplicationID: "amzn1.echo-sdk-ams.app.000000-d0ed-0000-ad00-000000d00ebe",
 		Handler:       helloHandler,
 	})
+	log.Println("Listening...")
 	log.Fatal(http.ListenAndServe(":3000", j))
 }
 
