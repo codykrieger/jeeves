@@ -27,10 +27,6 @@ func init() {
 	certURLStringToBytesMap = make(map[string][]byte)
 }
 
-type Jeeves struct {
-	skillsByEndpoint map[string]*Skill
-}
-
 type Skill struct {
 	Name            string
 	Endpoint        string
@@ -45,39 +41,26 @@ type requestContext struct {
 	skill  *Skill
 }
 
-func New() *Jeeves {
-	j := Jeeves{
-		skillsByEndpoint: make(map[string]*Skill),
-	}
-	return &j
-}
-
-func (j *Jeeves) RegisterSkill(skill *Skill) {
-	// FIXME: Validate Endpoint.
-	j.skillsByEndpoint[skill.Endpoint] = skill
-
+func RegisterSkill(skill *Skill) http.Handler {
 	skill.internalHandler = func(ctx *requestContext, req *ask.Request) {
 		resp := skill.Handler(skill, req)
+
 		bytes, _ := resp.Bytes()
+		// FIXME: Handle errors.
 
 		ctx.writer.Header().Set("Content-Type", "application/json; charset=utf-8")
 		ctx.writer.Write(bytes)
 	}
+
+	return skill
 }
 
-func (j *Jeeves) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	skill := j.skillsByEndpoint[r.URL.Path]
-	if skill == nil {
-		http.NotFound(w, r)
-		return
-	}
-
+func (skill *Skill) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := &requestContext{
 		writer: w,
 		req:    r,
 		skill:  skill,
 	}
-
 	ctx.process()
 }
 
@@ -246,9 +229,10 @@ func (ctx *requestContext) validateRequestType(req *ask.Request) bool {
 }
 
 func readCertAtURL(urlString string) ([]byte, error) {
-	if bytes, ok := certURLStringToBytesMap[urlString]; ok {
-		return bytes, nil
-	}
+	// FIXME: Re-enable caching after performance impact can be gauged.
+	// if bytes, ok := certURLStringToBytesMap[urlString]; ok {
+	// 	return bytes, nil
+	// }
 
 	resp, err := http.Get(urlString)
 	if err != nil {
@@ -262,7 +246,7 @@ func readCertAtURL(urlString string) ([]byte, error) {
 		return nil, fmt.Errorf("Couldn't read Amazon cert file: %v", err)
 	}
 
-	certURLStringToBytesMap[urlString] = bytes
+	// certURLStringToBytesMap[urlString] = bytes
 
 	return bytes, nil
 }
