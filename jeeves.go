@@ -10,7 +10,6 @@ import (
 
 	"bytes"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -36,9 +35,10 @@ type Skill struct {
 }
 
 type requestContext struct {
-	writer http.ResponseWriter
-	req    *http.Request
-	skill  *Skill
+	writer  http.ResponseWriter
+	req     *http.Request
+	reqBody *[]byte
+	skill   *Skill
 }
 
 func RegisterSkill(skill *Skill) http.Handler {
@@ -70,7 +70,16 @@ func (ctx *requestContext) err(code int, theError error) {
 }
 
 func (ctx *requestContext) process() {
-	req, err := ask.NewRequestFromJSON(ctx.req.Body)
+	body, err := ioutil.ReadAll(ctx.req.Body)
+	if err != nil {
+		ctx.err(400, err)
+		return
+	}
+
+	ctx.reqBody = &body
+	ctx.req.Body = ioutil.NopCloser(bytes.NewReader(*ctx.reqBody))
+
+	req, err := ask.NewRequestFromJSON(bytes.NewReader(*ctx.reqBody))
 	if err != nil {
 		ctx.err(400, err)
 		return
@@ -103,29 +112,44 @@ func (ctx *requestContext) validateRequestSignature(req *ask.Request) bool {
 	// structure) has a valid chain of trust up to a trusted root CA (see
 	// https://developer.amazon.com/public/solutions/alexa/alexa-skills-kit/docs/developing-an-alexa-skill-as-a-web-service#Checking%20the%20Signature%20of%20the%20Request).
 	// This will at least be sufficient for development, though.
-	pemBlock, _ := pem.Decode(certBytes)
-	if err != nil {
-		ctx.err(400, fmt.Errorf("Failed to parse certificate PEM: %v", err))
+
+	var certs []*x509.Certificate
+
+	for {
+		var pemBlock *pem.Block
+		pemBlock, certBytes = pem.Decode(certBytes)
+		if pemBlock == nil {
+			break
+		}
+
+		cert, err := x509.ParseCertificate(pemBlock.Bytes)
+		if err != nil {
+			ctx.err(400, fmt.Errorf("Failed to parse x509 certificate: %v", err))
+			return false
+		}
+
+		now := time.Now().Unix()
+		if now < cert.NotBefore.Unix() || now > cert.NotAfter.Unix() {
+			ctx.err(400, fmt.Errorf("Given certificate is expired or not yet valid"))
+			// FIXME: Maybe blow away the url => cert data cache at this point to
+			// avoid having to restart the server in the case where the cert has
+			// been updated after expiry? Probably in some other failure cases, too.
+			return false
+		}
+
+		certs = append(certs, cert)
+	}
+
+	numberOfCerts := len(certs)
+
+	if numberOfCerts < 2 {
+		ctx.err(400, fmt.Errorf("Unexpected number of certificates (%v)", numberOfCerts))
 		return false
 	}
 
-	cert, err := x509.ParseCertificate(pemBlock.Bytes)
-	if err != nil {
-		ctx.err(400, fmt.Errorf("Failed to parse x509 certificate: %v", err))
-		return false
-	}
-
-	now := time.Now().Unix()
-	if now < cert.NotBefore.Unix() || now > cert.NotAfter.Unix() {
-		ctx.err(400, fmt.Errorf("Given certificate is expired or not yet valid"))
-		// FIXME: Maybe blow away the url => cert data cache at this point to
-		// avoid having to restart the server in the case where the cert has
-		// been updated after expiry? Probably in some other failure cases, too.
-		return false
-	}
+	cert := certs[0]
 
 	validSAN := false
-
 	for _, san := range cert.Subject.Names {
 		if san.Value == "echo-api.amazon.com" {
 			validSAN = true
@@ -138,8 +162,19 @@ func (ctx *requestContext) validateRequestSignature(req *ask.Request) bool {
 		return false
 	}
 
-	// FIXME: At this point we should verify that all certs in the chain combine
-	// to create a chain of trust to a trusted root CA.
+	intermediateCerts := x509.NewCertPool()
+	for i := 1; i < numberOfCerts; i++ {
+		intermediateCerts.AddCert(certs[i])
+	}
+
+	verifyOpts := x509.VerifyOptions{
+		Intermediates: intermediateCerts,
+	}
+
+	if _, err := cert.Verify(verifyOpts); err != nil {
+		ctx.err(400, fmt.Errorf("Failed to verify certificate chain"))
+		return false
+	}
 
 	publicKey := cert.PublicKey
 	encodedSignature := ctx.req.Header.Get("Signature")
@@ -149,15 +184,8 @@ func (ctx *requestContext) validateRequestSignature(req *ask.Request) bool {
 		return false
 	}
 
-	var buf bytes.Buffer
 	hash := sha1.New()
-	_, err = io.Copy(hash, io.TeeReader(ctx.req.Body, &buf))
-	if err != nil {
-		ctx.err(500, fmt.Errorf("IO error: %v", err))
-		return false
-	}
-
-	ctx.req.Body = ioutil.NopCloser(&buf)
+	hash.Write(*ctx.reqBody)
 
 	err = rsa.VerifyPKCS1v15(publicKey.(*rsa.PublicKey), crypto.SHA1, hash.Sum(nil), decodedSignature)
 	if err != nil {
