@@ -7,7 +7,7 @@ Inspired by [mikeflynn/go-alexa][go-alexa].
 
 ## Usage
 
-A basic usage example is available in [examples/simple][simple-example].
+A basic usage example is available in [examples/hello][hello-example].
 
 [go-alexa]: https://github.com/mikeflynn/go-alexa
-[simple-example]: https://github.com/codykrieger/jeeves/blob/master/examples/simple/main.go
+[hello-example]: https://github.com/codykrieger/jeeves/blob/master/examples/hello
