@@ -22,9 +22,12 @@ func helloHandler(skill *jeeves.Skill, req *ask.Request) *ask.Response {
 	resp := ask.NewResponse(req)
 
 	if req.IsLaunchRequest() {
+		log.Println("Launch request!")
 		resp.Body.OutputSpeech = ask.NewOutputSpeech("Hello there!")
 	} else if req.IsIntentRequest() {
+		log.Println("Intent request!")
 	} else if req.IsSessionEndedRequest() {
+		log.Println("Session Ended request!")
 	}
 
 	return resp
